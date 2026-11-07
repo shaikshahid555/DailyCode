@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if the requesting user is an administrator
+    function isAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN') ||
+        (request.auth.token.email != null && 
+         (request.auth.token.email == 'shadeedshaik1@gmail.com' ||
+          request.auth.token.email.matches('.*admin.*')))
+      );
+    }
+
+    // USERS collection:
+    // - Authenticated users can read user profiles.
+    // - Users can create and update their own profile document upon signing in.
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      allow delete: if isAdmin();
+    }
+
+    // PROBLEMS collection:
+    // Document ID is the challenge date (YYYY-MM-DD).
+    // - Authenticated users can read problems.
+    // - Administrators can create, update, or delete problems.
+    match /problems/{problemDate} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // COMPLETIONS collection:
+    // completions/{userId}/days/{date}
+    // - Users can only read and write their own daily completions.
+    // - Subcollection guarantees atomic 1 completion per day.
+    match /completions/{userId}/days/{completionDate} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+  }
+}
